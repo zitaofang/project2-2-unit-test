@@ -41,7 +41,7 @@ int assert_equal(int error_case, int is_memory, unsigned int actual, unsigned in
 	if (actual == expect) {
 		return 1;
 	}
-	if(!verbose)
+	if(!verbose && !error_case)
 		print_test_case(error_case);
 	va_list args;
 	va_start(args, error_format);
@@ -60,7 +60,7 @@ unsigned int PC;
 Processor processor;
 Byte memory[MEMORY_SPACE];
 void execute_test_case(int error_case) {
-	if(verbose)
+	if(verbose && !error_case)
 		print_test_case(error_case);
 	struct test_case* current_case;
 	if (error_case)
@@ -163,7 +163,7 @@ void execute_test_case(int error_case) {
 	}
 
 	if (verbose && assertion_result == 1 && !error_case)
-		printf("Test Passed\n");
+		printf("Test Passed\n\n");
 	cases_counter++;
 }
 
@@ -177,9 +177,8 @@ int main(int arc, char **argv) {
 		if (arg_seed != 0)
 			seed = arg_seed;
 		// error case support
-		char* next_char = argv[arg_iter];
-		while(*next_char != '\0' && *next_char == '_')
-			error_case++, next_char++;
+		if (argv[arg_iter][0] == 'e')
+			error_case = atoi(argv[arg_iter] + 1) - 56;
 		arg_iter++;
 	}
 	if (seed == 0)
@@ -224,13 +223,14 @@ int main(int arc, char **argv) {
 		int j;
 		for (j = 0; j < arc; j++)
 			strcat(strcat(command, argv[j]), " ");
-		for (j = 0; j < i + 1; j++)
-			strcat(command, "_");
+		char buf[16];
+		sprintf(buf, "e%d", cases_counter);
+		strcat(command, buf);
 		print_test_case(i + 1);
 		int res = system(command);
-		int assertion_result = assert_equal(error_case, 0, WEXITSTATUS(res), 0xFF, "Erroneous case exit status assertion failed:\n");
+		int assertion_result = assert_equal(i + 1, 0, WEXITSTATUS(res), 0xFF, "Erroneous case exit status assertion failed:\n");
 		if(assertion_result)
-			printf("DON\'T WORRY -- Test Passed\n");
+			printf("DON\'T WORRY -- Test Passed\n\n");
 		cases_counter++;
 	}
 
@@ -238,7 +238,14 @@ int main(int arc, char **argv) {
 	printf("\n");
 	if(!verbose)
 		printf("If the test output is empty except the errneous cases, your program pass all the tests.\n");
-	printf("If a test case failed, you can set a breakpoint with \"b part2_unit_test.c:138 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
-	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:138 if cases_counter==16\" in (c)gdb.\n");
+	printf("If a normal test case failed, you can set a breakpoint with \"b part2_unit_test.c:138 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
+	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:138 if cases_counter==16\" in (c)gdb.\n\n");
+	printf("If a test case marked erroneous failed, it means your code didn't report an error which it should have done.\n");
+	printf("For these cases, pass \"e<Failed Test Case #>\" (e.g. \"e57\" for case 57) as an argument and set breakpoint with \"b part2_unit_test.c:138\".\n\n");
+	printf("Some explanation:\n");
+	printf("Test #57 and #58 is slli and srli/srai with wrong imm(high 7 bits). They are invalid instructions and should be reported.\n");
+	printf("Test #59 and #60 are about out-of-bounds memory access. The address is greater than MEMORY_SPACE.\n");
+	printf("Test #61-64 are also about out-of-bounds memory access, but they test whether you report"
+		" an error when trying to read/write a WORD at an address like 1024*1024-2.\n");
 	return 0;
 }
