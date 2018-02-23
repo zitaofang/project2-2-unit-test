@@ -16,22 +16,33 @@ struct test_case {
 	unsigned int PC_offset;
 };
 int build_test_suite(struct test_case* buffer);
+int build_error_test(struct test_case* buffer);
 
 struct test_case* cases;
+struct test_case* error_cases;
 unsigned int cases_counter = 0;
 int verbose = 0;
 
-void print_test_case() {
-	printf("Test case %2d (where rs1 = 0x%.8x, rs2 = 0x%.8x):\t", cases_counter, cases[cases_counter].rs1_initial, cases[cases_counter].rs2_initial);
-	decode_instruction(cases[cases_counter].instruction);
+void print_test_case(int error_case) {
+	const char* format;
+	struct test_case* current_case;
+	if(error_case) {
+		format = "Test case %2d (erroneous) (where rs1 = 0x%.8x, rs2 = 0x%.8x):\t\t";
+		current_case = &error_cases[error_case - 1];
+	} else {
+		format = "Test case %2d (where rs1 = 0x%.8x, rs2 = 0x%.8x):\t\t";
+		current_case = &cases[cases_counter];
+	}
+	printf(format, cases_counter, current_case->rs1_initial, current_case->rs2_initial);
+	decode_instruction(current_case->instruction);
 }
 
-int assert_equal(int is_memory, unsigned int actual, unsigned int expect, const char* error_format, ...) {
+int assert_equal(int error_case, int is_memory, unsigned int actual, unsigned int expect, const char* error_format, ...) {
 	if (actual == expect) {
 		return 1;
 	}
 	if(!verbose)
-		print_test_case();
+		print_test_case(error_case);
 	va_list args;
 	va_start(args, error_format);
 	vprintf(error_format, args);
@@ -48,34 +59,43 @@ int assert_equal(int is_memory, unsigned int actual, unsigned int expect, const 
 unsigned int PC;
 Processor processor;
 Byte memory[MEMORY_SPACE];
-void execute_test_case() {
+void execute_test_case(int error_case) {
 	if(verbose)
-		print_test_case();
-	int assertion_result = 0;
+		print_test_case(error_case);
+	struct test_case* current_case;
+	if (error_case)
+		current_case = &error_cases[error_case - 1];
+	else
+		current_case = &cases[cases_counter];
+
+	int assertion_result = 1;
 	processor.PC = (rand() >> 22) << 2;
 	processor.R[0] = 0;
 	Instruction i;
 	Processor control_group_processor;
 	Byte control_group_memory[MEMORY_SPACE];
-	i.bits = cases[cases_counter].instruction;
+	i.bits = current_case->instruction;
 	// Get the instruction type so that it can initialize the registers (and memory)
 	switch (i.opcode)
 	{
 	case 0x33: // R
 	case 0x23: // S
 	case 0x63: // SB
-		processor.R[i.rtype.rs2] = cases[cases_counter].rs2_initial;
+		processor.R[i.rtype.rs2] = current_case->rs2_initial;
 	case 0x13: // I
-		processor.R[i.rtype.rs1] = cases[cases_counter].rs1_initial;
+		processor.R[i.rtype.rs1] = current_case->rs1_initial;
 	case 0x37: // U
 	case 0x6F: // UJ
 	case 0x73: // (ecall)
 		break;
 	case 0x03: // (L)
-		processor.R[i.rtype.rs1] = cases[cases_counter].rs1_initial;
-		unsigned int* memory_location = (unsigned int*) &memory[cases[cases_counter].address];
-		*memory_location &= ~cases[cases_counter].mem_mask;
-		*memory_location |= cases[cases_counter].rd_mem_value & cases[cases_counter].mem_mask;
+		processor.R[i.rtype.rs1] = current_case->rs1_initial;
+		// If it is out of bound, ignore it
+		if(current_case->address > MEMORY_SPACE)
+			break;
+		unsigned int* memory_location = (unsigned int*) &memory[current_case->address];
+		*memory_location &= ~current_case->mem_mask;
+		*memory_location |= current_case->rd_mem_value & current_case->mem_mask;
 		break;
 	default:
 		break;
@@ -88,7 +108,7 @@ void execute_test_case() {
 	case 0x13:
 	case 0x3:
 	case 0x37:
-		control_group_processor.R[i.rtype.rd] = cases[cases_counter].rd_mem_value;
+		control_group_processor.R[i.rtype.rd] = current_case->rd_mem_value;
 	case 0x73:
 	case 0x63:
 		break;
@@ -97,34 +117,52 @@ void execute_test_case() {
 		break;
 	case 0x23:
 		// Store
-		;
-		unsigned int* memory_location = (unsigned int*) &control_group_memory[cases[cases_counter].address];
-		*memory_location &= ~cases[cases_counter].mem_mask;
-		*memory_location |= cases[cases_counter].rd_mem_value & cases[cases_counter].mem_mask;
+		// If it is out of bounds, ignore it
+		if(current_case->address > MEMORY_SPACE)
+			break;
+		unsigned int* memory_location = (unsigned int*) &control_group_memory[current_case->address];
+		*memory_location &= ~current_case->mem_mask;
+		*memory_location |= current_case->rd_mem_value & current_case->mem_mask;
 		break;
 	}
 
+	unsigned int PC_before = 0;
+	unsigned int memory_value = 0;
+	// If this is jal, report the current PC
+	if (i.opcode == 0x6F)
+		PC_before = processor.PC;
+	// If this is a load instruction, report the current memory content
+	if (i.opcode == 0x03 && !error_case)
+		memory_value = *((unsigned int*) &memory[current_case->address]);
 	// Execute!
 	execute_instruction(i.bits, &processor, memory);
 
 	// Clear x0
 	processor.R[0] = 0;
 	// Compare PC
-	assertion_result = assert_equal(0, processor.PC - control_group_processor.PC, cases[cases_counter].PC_offset, "PC offset assertion failed:\n");
+	if(!error_case)
+		assertion_result &= assert_equal(error_case, 0, processor.PC - control_group_processor.PC, current_case->PC_offset, "PC offset assertion failed:\n");
 	// Compare R
 	int count;
-	for (count = 0; count < 32; count++) {
-		assertion_result = assert_equal(0, processor.R[count], control_group_processor.R[count], "Register x%d assertion failed:\n", count);
-	}
+	if(!error_case)
+		for (count = 0; count < 32; count++) {
+			assertion_result &= assert_equal(error_case, 0, processor.R[count], control_group_processor.R[count], "Register x%d assertion failed:\n", count);
+		}
 	// If this is a data transfer instruction, check the memory
-	if (i.opcode == 0x03 || i.opcode == 0x23) {
+	if ((i.opcode == 0x03 || i.opcode == 0x23) && !error_case) {
 		int address;
 		for (address = 0; address < MEMORY_SPACE; address++) {
-			assertion_result = assert_equal(1, memory[address], control_group_memory[address], "Memory assertion failed at address 0x%.8x:\n", address);
+			assertion_result &= assert_equal(error_case, 1, memory[address], control_group_memory[address], "Memory assertion failed at address 0x%.8x:\n", address);
 		}
 	}
+	if (assertion_result == 0 && !error_case) {
+		if(i.opcode == 0x6F)
+			printf("PC before execution: 0x%.8x\n", PC_before);
+		else if(i.opcode == 0x03)
+			printf("Memory content at 0x%.8x before execution: 0x%.8x\n", current_case->address, memory_value);
+	}
 
-	if (verbose && assertion_result == 1)
+	if (verbose && assertion_result == 1 && !error_case)
 		printf("Test Passed\n");
 	cases_counter++;
 }
@@ -132,19 +170,36 @@ void execute_test_case() {
 int main(int arc, char **argv) {
 	int arg_iter = 1;
 	int seed = 0;
+	int error_case = 0;
 	while (arg_iter < arc) {
 		verbose = strcmp(argv[arg_iter], "-v") == 0;
 		int arg_seed = atoi(argv[arg_iter]);
 		if (arg_seed != 0)
 			seed = arg_seed;
+		// error case support
+		char* next_char = argv[arg_iter];
+		while(*next_char != '\0' && *next_char == '_')
+			error_case++, next_char++;
 		arg_iter++;
 	}
 	if (seed == 0)
 		seed = time(0);
+	srand(seed);
+
+	// Error case:
+	struct test_case error_cases_array[10];
+	error_cases = error_cases_array;
+	int errneous_count = build_error_test(error_cases);
+
+	if (error_case) {
+		cases_counter = 56 + error_case;
+		execute_test_case(error_case);
+		exit(0);
+	}
 	// Argument
 	printf("=====================================\n");
 	printf("Proj2-2 Unit Test by Zitao Fang\n");
-	printf("Version: 1.1\n");
+	printf("Version: 1.2\n");
 	printf("\n");
 	printf("This program will use your part1 disassembler to show the instruction, so it is critical that Part 1 is correctly implemented.\n");
 	printf("Please post your bug report to the Piazza thread.\n");
@@ -153,7 +208,6 @@ int main(int arc, char **argv) {
 	printf("If you need to reproduce this suite, enter the seed as a command line argument.\n");
 	printf("To enable verbose mode (show all test case even if your code passed them), use \"-v\".\n");
 	printf("==========Test Output==========\n");
-	srand(seed);
 
 	struct test_case cases_array[100];
 	cases = cases_array;
@@ -161,13 +215,30 @@ int main(int arc, char **argv) {
 	// execute test cases
 	int i;
 	for (i = 0; i < test_count; i++) {
-		execute_test_case();
+		execute_test_case(0);
 	}
+	// Execute errneous cases
+	char command[1024];
+	for(i = 0; i < errneous_count; i++) {
+		memset(command, 0, 1024);
+		int j;
+		for (j = 0; j < arc; j++)
+			strcat(strcat(command, argv[j]), " ");
+		for (j = 0; j < i + 1; j++)
+			strcat(command, "_");
+		print_test_case(i + 1);
+		int res = system(command);
+		int assertion_result = assert_equal(error_case, 0, WEXITSTATUS(res), 0xFF, "Erroneous case exit status assertion failed:\n");
+		if(assertion_result)
+			printf("DON\'T WORRY -- Test Passed\n");
+		cases_counter++;
+	}
+
 	printf("==========Test Output==========\n");
 	printf("\n");
 	if(!verbose)
-		printf("If the test output is empty, your program pass all the tests.\n");
-	printf("If a test case failed, you can set a breakpoint with \"b part2_unit_test.c:108 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
-	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:108 if cases_counter==16\" in (c)gdb.\n");
+		printf("If the test output is empty except the errneous cases, your program pass all the tests.\n");
+	printf("If a test case failed, you can set a breakpoint with \"b part2_unit_test.c:138 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
+	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:138 if cases_counter==16\" in (c)gdb.\n");
 	return 0;
 }
