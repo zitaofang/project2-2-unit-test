@@ -198,7 +198,7 @@ int main(int arc, char **argv) {
 	// Argument
 	printf("=====================================\n");
 	printf("Proj2-2 Unit Test by Zitao Fang\n");
-	printf("Version: 1.2\n");
+	printf("Version: 1.3\n");
 	printf("\n");
 	printf("This program will use your part1 disassembler to show the instruction, so it is critical that Part 1 is correctly implemented.\n");
 	printf("Please post your bug report to the Piazza thread.\n");
