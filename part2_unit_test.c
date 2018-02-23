@@ -26,7 +26,7 @@ void print_test_case() {
 	decode_instruction(cases[cases_counter].instruction);
 }
 
-int assert_equal(unsigned int actual, unsigned int expect, const char* error_format, ...) {
+int assert_equal(int is_memory, unsigned int actual, unsigned int expect, const char* error_format, ...) {
 	if (actual == expect) {
 		return 1;
 	}
@@ -36,7 +36,10 @@ int assert_equal(unsigned int actual, unsigned int expect, const char* error_for
 	va_start(args, error_format);
 	vprintf(error_format, args);
 	va_end(args);
-	printf("Expect: 0x%.8x; Actual: 0x%.8x\n", expect, actual);
+	if (is_memory)
+		printf("Expect: 0x%.2x; Actual: 0x%.2x\n", expect, actual);
+	else
+		printf("Expect: 0x%.8x; Actual: 0x%.8x\n", expect, actual);
 	// print instruction
 	printf("\n");
 	return 0;
@@ -107,17 +110,17 @@ void execute_test_case() {
 	// Clear x0
 	processor.R[0] = 0;
 	// Compare PC
-	assertion_result = assert_equal(processor.PC - control_group_processor.PC, cases[cases_counter].PC_offset, "PC offset assertion failed:\n");
+	assertion_result = assert_equal(0, processor.PC - control_group_processor.PC, cases[cases_counter].PC_offset, "PC offset assertion failed:\n");
 	// Compare R
 	int count;
 	for (count = 0; count < 32; count++) {
-		assertion_result = assert_equal(processor.R[count], control_group_processor.R[count], "Register x%d assertion failed:\n", count);
+		assertion_result = assert_equal(0, processor.R[count], control_group_processor.R[count], "Register x%d assertion failed:\n", count);
 	}
 	// If this is a data transfer instruction, check the memory
 	if (i.opcode == 0x03 || i.opcode == 0x23) {
 		int address;
 		for (address = 0; address < MEMORY_SPACE; address++) {
-			assertion_result = assert_equal(memory[address], control_group_memory[address], "Memory assertion failed at address 0x%.8x:\n", address);
+			assertion_result = assert_equal(1, memory[address], control_group_memory[address], "Memory assertion failed at address 0x%.8x:\n", address);
 		}
 	}
 
@@ -164,7 +167,7 @@ int main(int arc, char **argv) {
 	printf("\n");
 	if(!verbose)
 		printf("If the test output is empty, your program pass all the tests.\n");
-	printf("If a test case failed, you can set a breakpoint with \"b part2_unit_test.c:93 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
-	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:93 if cases_counter==16\" in (c)gdb.\n");
+	printf("If a test case failed, you can set a breakpoint with \"b part2_unit_test.c:108 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
+	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:108 if cases_counter==16\" in (c)gdb.\n");
 	return 0;
 }
