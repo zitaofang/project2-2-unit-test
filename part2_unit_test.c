@@ -19,24 +19,36 @@ int build_test_suite(struct test_case* buffer);
 
 struct test_case* cases;
 unsigned int cases_counter = 0;
+int verbose = 0;
 
-void assert_equal(unsigned int actual, unsigned int expect, const char* error_format, ...) {
-	if (actual == expect) return;
+void print_test_case() {
+	printf("Test case %2d (where rs1 = 0x%.8x, rs2 = 0x%.8x):\t", cases_counter, cases[cases_counter].rs1_initial, cases[cases_counter].rs2_initial);
+	decode_instruction(cases[cases_counter].instruction);
+}
+
+int assert_equal(unsigned int actual, unsigned int expect, const char* error_format, ...) {
+	if (actual == expect) {
+		return 1;
+	}
+	if(!verbose)
+		print_test_case();
 	va_list args;
 	va_start(args, error_format);
 	vprintf(error_format, args);
 	va_end(args);
 	printf("Expect: 0x%.8x; Actual: 0x%.8x\n", expect, actual);
 	// print instruction
-	printf("Test case %.2d (where rs1 = 0x%.8x, rs2 = 0x%.8x):\t", cases_counter, cases[cases_counter].rs1_initial, cases[cases_counter].rs2_initial);
-	decode_instruction(cases[cases_counter].instruction);
 	printf("\n");
+	return 0;
 }
 
 unsigned int PC;
 Processor processor;
 Byte memory[MEMORY_SPACE];
 void execute_test_case() {
+	if(verbose)
+		print_test_case();
+	int assertion_result = 0;
 	processor.PC = (rand() >> 22) << 2;
 	processor.R[0] = 0;
 	Instruction i;
@@ -95,33 +107,51 @@ void execute_test_case() {
 	// Clear x0
 	processor.R[0] = 0;
 	// Compare PC
-	assert_equal(processor.PC - control_group_processor.PC, cases[cases_counter].PC_offset, "Test case %d: PC offset assertion failed:\n", cases_counter);
+	assertion_result = assert_equal(processor.PC - control_group_processor.PC, cases[cases_counter].PC_offset, "PC offset assertion failed:\n");
 	// Compare R
 	int count;
 	for (count = 0; count < 32; count++) {
-		assert_equal(processor.R[count], control_group_processor.R[count], "Test case %d: x%d assertion failed:\n", cases_counter, count);
+		assertion_result = assert_equal(processor.R[count], control_group_processor.R[count], "Register x%d assertion failed:\n", count);
 	}
 	// If this is a data transfer instruction, check the memory
 	if (i.opcode == 0x03 || i.opcode == 0x23) {
 		int address;
 		for (address = 0; address < MEMORY_SPACE; address++) {
-			assert_equal(memory[address], control_group_memory[address], "Test cases %d: memory assertion failed at 0x%.8x:\n", cases_counter, address);
+			assertion_result = assert_equal(memory[address], control_group_memory[address], "Memory assertion failed at address 0x%.8x:\n", address);
 		}
 	}
 
+	if (verbose && assertion_result == 1)
+		printf("Test Passed\n");
 	cases_counter++;
 }
 
 int main(int arc, char **argv) {
+	int arg_iter = 1;
+	int seed = 0;
+	while (arg_iter < arc) {
+		verbose = strcmp(argv[arg_iter], "-v") == 0;
+		int arg_seed = atoi(argv[arg_iter]);
+		if (arg_seed != 0)
+			seed = arg_seed;
+		arg_iter++;
+	}
+	if (seed == 0)
+		seed = time(0);
+	// Argument
 	printf("=====================================\n");
 	printf("Proj2-2 Unit Test by Zitao Fang\n");
-	printf("Version: 1.0\n");
+	printf("Version: 1.1\n");
 	printf("\n");
 	printf("This program will use your part1 disassembler to show the instruction, so it is critical that Part 1 is correctly implemented.\n");
 	printf("Please post your bug report to the Piazza thread.\n");
 	printf("\n");
+	printf("The random number seed for this test suite is %d.\n", seed);
+	printf("If you need to reproduce this suite, enter the seed as a command line argument.\n");
+	printf("To enable verbose mode (show all test case even if your code passed them), use \"-v\".\n");
 	printf("==========Test Output==========\n");
-	srand(time(0));
+	srand(seed);
+
 	struct test_case cases_array[100];
 	cases = cases_array;
 	int test_count = build_test_suite(cases);
@@ -132,7 +162,9 @@ int main(int arc, char **argv) {
 	}
 	printf("==========Test Output==========\n");
 	printf("\n");
-	printf("If the test output is empty, your program pass all the tests.\n");
-	printf("Otherwise, set a breakpoint with \"b part2_unit_test.c:93 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
+	if(!verbose)
+		printf("If the test output is empty, your program pass all the tests.\n");
+	printf("If a test case failed, you can set a breakpoint with \"b part2_unit_test.c:93 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
+	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:93 if cases_counter==16\" in (c)gdb.\n");
 	return 0;
 }
