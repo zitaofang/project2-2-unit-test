@@ -241,7 +241,7 @@ int main(int arc, char **argv) {
 	printf("If a normal test case failed, you can set a breakpoint with \"b part2_unit_test.c:138 if cases_counter==<Failed Test Case #>\" and start debugging.\n");
 	printf("e.g. If the test case labeled 16 failed, type \"b part2_unit_test.c:138 if cases_counter==16\" in (c)gdb.\n\n");
 	printf("If a test case marked erroneous failed, it means your code didn't report an error which it should have done.\n");
-	printf("For these cases, pass \"e<Failed Test Case #>\" (e.g. \"e57\" for case 57) as an argument and set breakpoint with \"b part2_unit_test.c:138\".\n\n");
+	printf("For these cases, pass \"e<Failed Test Case #>\" (e.g. \"e57\" for case 57) as a command-line argument and set breakpoint with \"b part2_unit_test.c:138\".\n\n");
 	printf("Some explanation:\n");
 	printf("Test #57 and #58 is slli and srli/srai with wrong imm(high 7 bits). They are invalid instructions and should be reported.\n");
 	printf("Test #59 and #60 are about out-of-bounds memory access. The address is greater than MEMORY_SPACE.\n");
